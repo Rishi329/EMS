@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: ems-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-energy_monitoring}
+      MYSQL_USER: ${MYSQL_USER:-ems_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ems_password}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./db_setup.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpassword}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - ems-network
+
+  # MQTT Broker (Mosquitto)
+  mqtt:
+    image: eclipse-mosquitto:2
+    container_name: ems-mqtt
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    networks:
+      - ems-network
+
+  # FastAPI Application
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ems-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # Database Configuration
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${MYSQL_USER:-ems_user}
+      DB_PASSWORD: ${MYSQL_PASSWORD:-ems_password}
+      DB_NAME: ${MYSQL_DATABASE:-energy_monitoring}
+      DB_POOL_SIZE: 10
+      # MQTT Configuration
+      MQTT_BROKER: mqtt
+      MQTT_PORT: 1883
+      MQTT_USER: ${MQTT_USER:-esp32meter}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-meter@123}
+      # App Configuration
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mqtt:
+        condition: service_started
+    networks:
+      - ems-network
+
+volumes:
+  mysql_data:
+  mosquitto_data:
+  mosquitto_log:
+
+networks:
+  ems-network:
+    driver: bridge

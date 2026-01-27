@@ -8,10 +8,12 @@ import json
 import threading
 import paho.mqtt.client as mqtt
 import logging
+import os
 
 # ============ Logging Setup ============
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, LOG_LEVEL.upper(), logging.INFO),
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -147,12 +149,13 @@ class LegacyData(BaseModel):
 
 # ============ Database Configuration ============
 DB_CONFIG = {
-    'host': 'localhost',
-    'user': 'root',           # Update with your credentials
-    'password': 'password',   # Update with your credentials
-    'database': 'energy_monitoring',
+    'host': os.getenv('DB_HOST', 'localhost'),
+    'port': int(os.getenv('DB_PORT', '3306')),
+    'user': os.getenv('DB_USER', 'root'),
+    'password': os.getenv('DB_PASSWORD', 'password'),
+    'database': os.getenv('DB_NAME', 'energy_monitoring'),
     'pool_name': 'energy_pool',
-    'pool_size': 10
+    'pool_size': int(os.getenv('DB_POOL_SIZE', '10'))
 }
 
 # Create connection pool
@@ -164,11 +167,11 @@ except Exception as e:
     connection_pool = None
 
 # ============ MQTT Configuration ============
-MQTT_BROKER = "localhost"
-MQTT_PORT = 1883
-MQTT_USER = "esp32meter"
-MQTT_PASSWORD = "meter@123"
-MQTT_TOPIC = "meters/#"
+MQTT_BROKER = os.getenv('MQTT_BROKER', 'localhost')
+MQTT_PORT = int(os.getenv('MQTT_PORT', '1883'))
+MQTT_USER = os.getenv('MQTT_USER', 'esp32meter')
+MQTT_PASSWORD = os.getenv('MQTT_PASSWORD', 'meter@123')
+MQTT_TOPIC = os.getenv('MQTT_TOPIC', 'meters/#')
 
 mqtt_client = None
 
