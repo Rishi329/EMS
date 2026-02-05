@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"D:\\\\Rishikesh\\\\EMS\" show HEAD:main.py)"
+    ]
+  }
+}

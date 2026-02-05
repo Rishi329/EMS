@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
 import mysql.connector
 from mysql.connector import pooling
 from pydantic import BaseModel
@@ -725,6 +726,15 @@ app = FastAPI(
     version="2.0.0"
 )
 
+# CORS middleware - allow frontend to connect
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify exact origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize on startup"""
@@ -808,7 +818,7 @@ async def get_devices():
 
 @app.get("/api/readings/{device_id}")
 async def get_readings(device_id: str, limit: int = 100, meter_id: Optional[int] = None):
-    """Get recent readings for a device"""
+    """Get recent readings for a device with full 3-phase data"""
     conn = get_db_connection()
     if not conn:
         raise HTTPException(status_code=500, detail="Database connection failed")
@@ -817,8 +827,37 @@ async def get_readings(device_id: str, limit: int = 100, meter_id: Optional[int]
 
     try:
         query = """
-            SELECT meter_id, reading_timestamp, voltage, current, power,
-                   energy_kwh, power_factor, frequency
+            SELECT
+                meter_id,
+                reading_timestamp,
+                voltage_l1 as voltage_l1_n,
+                voltage_l2 as voltage_l2_n,
+                voltage_l3 as voltage_l3_n,
+                voltage_avg as voltage_avg_ln,
+                current_l1,
+                current_l2,
+                current_l3,
+                current_neutral as current_n,
+                current_avg,
+                power_l1 as active_power_l1,
+                power_l2 as active_power_l2,
+                power_l3 as active_power_l3,
+                power_total as total_active_power,
+                reactive_power_total as total_reactive_power,
+                apparent_power_total as total_apparent_power,
+                pf_l1 as power_factor_l1,
+                pf_l2 as power_factor_l2,
+                pf_l3 as power_factor_l3,
+                pf_total as power_factor,
+                energy_import as total_kwh_import,
+                energy_export as total_kwh_export,
+                frequency,
+                thd_voltage_l1,
+                thd_voltage_l2,
+                thd_voltage_l3,
+                thd_current_l1,
+                thd_current_l2,
+                thd_current_l3
             FROM meter_readings
             WHERE device_id = %s
         """
@@ -834,10 +873,11 @@ async def get_readings(device_id: str, limit: int = 100, meter_id: Optional[int]
         cursor.execute(query, params)
         readings = cursor.fetchall()
 
-        # Convert datetime to string for JSON
+        # Convert datetime to string and rename to 'timestamp' for frontend
         for r in readings:
             if r['reading_timestamp']:
-                r['reading_timestamp'] = r['reading_timestamp'].isoformat()
+                r['timestamp'] = r['reading_timestamp'].isoformat()
+                del r['reading_timestamp']
 
         return {"device_id": device_id, "readings": readings}
     finally:
@@ -854,30 +894,52 @@ async def get_device_stats(device_id: str, meter_id: int = 7):
     cursor = conn.cursor(dictionary=True)
 
     try:
+        # Get the latest reading for real-time power and power factor
+        cursor.execute("""
+            SELECT power_total, pf_total
+            FROM meter_readings
+            WHERE device_id = %s AND meter_id = %s
+            ORDER BY reading_timestamp DESC LIMIT 1
+        """, (device_id, meter_id))
+
+        latest_row = cursor.fetchone()
+        latest = {
+            "total_active_power": float(latest_row['power_total'] or 0) if latest_row else 0,
+            "power_factor": float(latest_row['pf_total'] or 0) if latest_row else 0
+        }
+
         # Today's stats
         cursor.execute("""
             SELECT
+                MAX(energy_import) - MIN(energy_import) as total_kwh_import,
+                MAX(energy_export) - MIN(energy_export) as total_kwh_export,
                 COUNT(*) as reading_count,
-                AVG(voltage) as avg_voltage,
-                AVG(current) as avg_current,
-                AVG(power) as avg_power,
-                MAX(power) as max_power,
-                MIN(power) as min_power,
-                MAX(energy_kwh) - MIN(energy_kwh) as energy_consumed,
-                AVG(power_factor) as avg_pf
+                AVG(voltage_avg) as avg_voltage,
+                AVG(power_total) as avg_power,
+                MAX(power_total) as max_power,
+                AVG(pf_total) as avg_pf
             FROM meter_readings
             WHERE device_id = %s AND meter_id = %s
             AND DATE(reading_timestamp) = CURDATE()
         """, (device_id, meter_id))
 
-        today = cursor.fetchone()
+        today_row = cursor.fetchone()
+        today = {
+            "total_kwh_import": float(today_row['total_kwh_import'] or 0) if today_row else 0,
+            "total_kwh_export": float(today_row['total_kwh_export'] or 0) if today_row else 0,
+            "reading_count": today_row['reading_count'] if today_row else 0,
+            "avg_voltage": float(today_row['avg_voltage'] or 0) if today_row else 0,
+            "avg_power": float(today_row['avg_power'] or 0) if today_row else 0,
+            "max_power": float(today_row['max_power'] or 0) if today_row else 0,
+            "avg_pf": float(today_row['avg_pf'] or 0) if today_row else 0
+        }
 
         # Last 24 hours hourly breakdown
         cursor.execute("""
             SELECT
                 DATE_FORMAT(reading_timestamp, '%%Y-%%m-%%d %%H:00') as hour,
-                AVG(power) as avg_power,
-                MAX(energy_kwh) - MIN(energy_kwh) as energy
+                AVG(power_total) as avg_power,
+                MAX(energy_import) - MIN(energy_import) as energy
             FROM meter_readings
             WHERE device_id = %s AND meter_id = %s
             AND reading_timestamp >= NOW() - INTERVAL 24 HOUR
@@ -890,6 +952,7 @@ async def get_device_stats(device_id: str, meter_id: int = 7):
         return {
             "device_id": device_id,
             "meter_id": meter_id,
+            "latest": latest,
             "today": today,
             "hourly": hourly
         }
