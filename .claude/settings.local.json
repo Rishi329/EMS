@@ -1,7 +1,23 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git -C \"D:\\\\Rishikesh\\\\EMS\" show HEAD:main.py)"
+      "Bash(git -C \"D:\\\\Rishikesh\\\\EMS\" show HEAD:main.py)",
+      "WebFetch(domain:www.elektroda.com)",
+      "WebFetch(domain:www.aggsoft.com)",
+      "WebFetch(domain:spotpear.com)",
+      "WebFetch(domain:5.imimg.com)",
+      "WebFetch(domain:support.elmeasure.com)",
+      "WebFetch(domain:rishabh.co.in)",
+      "WebFetch(domain:www.securemeters.com)",
+      "WebFetch(domain:cdck-file-uploads-europe1.s3.dualstack.eu-west-1.amazonaws.com)",
+      "WebFetch(domain:pdfcoffee.com)",
+      "WebFetch(domain:www.productinfo.schneider-electric.com)",
+      "WebFetch(domain:cdn.robotshop.com)",
+      "WebFetch(domain:devices.esphome.io)",
+      "WebFetch(domain:groups.google.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:www.se.com)",
+      "WebFetch(domain:www.scribd.com)"
     ]
   }
 }

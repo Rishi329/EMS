@@ -55,15 +55,15 @@ HardwareSerial& ModbusSerial = Serial2;
 #define MAX_METERS 10  // Maximum supported meters
 
 // Define your meter slave IDs here
-const uint8_t METER_SLAVE_IDS[] = {7, 10, 47, 3, 4};
+const uint8_t METER_SLAVE_IDS[] = { 7, 10, 47, 3, 4 };
 const uint8_t NUM_METERS = sizeof(METER_SLAVE_IDS) / sizeof(METER_SLAVE_IDS[0]);
 
 // Modbus nodes array
 ModbusMaster meterNodes[MAX_METERS];
 
 // --- Timing Settings ---
-const unsigned long readInterval = 60UL * 1000UL;        // Read every 1 minute
-const unsigned long publishInterval = 5UL * 60UL * 1000UL; // Publish every 5 minutes
+const unsigned long readInterval = 60UL * 1000UL;           // Read every 1 minute
+const unsigned long publishInterval = 5UL * 60UL * 1000UL;  // Publish every 5 minutes
 unsigned long lastReadTime = 0;
 unsigned long lastPublishTime = 0;
 unsigned long lastMqttReconnect = 0;
@@ -197,17 +197,17 @@ void printResetReason() {
   esp_reset_reason_t reason = esp_reset_reason();
   Serial.print("[Boot] Reset reason: ");
   switch (reason) {
-    case ESP_RST_POWERON:   Serial.println("Power-on"); break;
-    case ESP_RST_EXT:       Serial.println("External reset"); break;
-    case ESP_RST_SW:        Serial.println("Software reset"); break;
-    case ESP_RST_PANIC:     Serial.println("Exception/panic"); break;
-    case ESP_RST_INT_WDT:   Serial.println("Interrupt watchdog"); break;
-    case ESP_RST_TASK_WDT:  Serial.println("Task watchdog"); break;
-    case ESP_RST_WDT:       Serial.println("Other watchdog"); break;
+    case ESP_RST_POWERON: Serial.println("Power-on"); break;
+    case ESP_RST_EXT: Serial.println("External reset"); break;
+    case ESP_RST_SW: Serial.println("Software reset"); break;
+    case ESP_RST_PANIC: Serial.println("Exception/panic"); break;
+    case ESP_RST_INT_WDT: Serial.println("Interrupt watchdog"); break;
+    case ESP_RST_TASK_WDT: Serial.println("Task watchdog"); break;
+    case ESP_RST_WDT: Serial.println("Other watchdog"); break;
     case ESP_RST_DEEPSLEEP: Serial.println("Deep sleep wake"); break;
-    case ESP_RST_BROWNOUT:  Serial.println("Brownout"); break;
-    case ESP_RST_SDIO:      Serial.println("SDIO"); break;
-    default:                Serial.printf("Unknown (%d)\n", reason); break;
+    case ESP_RST_BROWNOUT: Serial.println("Brownout"); break;
+    case ESP_RST_SDIO: Serial.println("SDIO"); break;
+    default: Serial.printf("Unknown (%d)\n", reason); break;
   }
 }
 
@@ -233,8 +233,8 @@ unsigned long getTimestamp() {
 void safeDelay(unsigned long ms) {
   unsigned long start = millis();
   while (millis() - start < ms) {
-    yield();  // Feed watchdog
-    delay(1); // Small delay
+    yield();   // Feed watchdog
+    delay(1);  // Small delay
   }
 }
 
@@ -394,7 +394,7 @@ void manageWiFiConnection() {
 }
 
 void WiFiEvent(WiFiEvent_t event) {
-  switch(event) {
+  switch (event) {
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
       Serial.printf("[WiFi] Connected - IP: %s\n", WiFi.localIP().toString().c_str());
       wifiConnected = true;
@@ -432,9 +432,7 @@ void manageMqttConnection() {
     Serial.println(" Connected!");
     mqttConnected = true;
 
-    String onlineMsg = "{\"status\":\"online\",\"device\":\"" + deviceMAC +
-                       "\",\"ip\":\"" + WiFi.localIP().toString() +
-                       "\",\"version\":\"" + FIRMWARE_VERSION + "\"}";
+    String onlineMsg = "{\"status\":\"online\",\"device\":\"" + deviceMAC + "\",\"ip\":\"" + WiFi.localIP().toString() + "\",\"version\":\"" + FIRMWARE_VERSION + "\"}";
     mqtt.publish(willTopic.c_str(), onlineMsg.c_str(), true);
 
     mqtt.subscribe("meters/commands/#");
@@ -500,11 +498,11 @@ void readAndBufferMeterData() {
 
 void printMeterSummary(MeterData& m) {
   Serial.printf("    V: L1=%.1f L2=%.1f L3=%.1f (Avg=%.1f)\n",
-    m.voltageL1, m.voltageL2, m.voltageL3, m.avgVoltage);
+                m.voltageL1, m.voltageL2, m.voltageL3, m.avgVoltage);
   Serial.printf("    I: L1=%.2f L2=%.2f L3=%.2f (Total=%.2f)\n",
-    m.currentL1, m.currentL2, m.currentL3, m.totalCurrent);
+                m.currentL1, m.currentL2, m.currentL3, m.totalCurrent);
   Serial.printf("    P: %.1fW  PF: %.2f  Freq: %.2fHz\n",
-    m.totalPower, m.totalPF, m.frequency);
+                m.totalPower, m.totalPF, m.frequency);
 }
 
 MeterData readMeter(ModbusMaster& node) {
