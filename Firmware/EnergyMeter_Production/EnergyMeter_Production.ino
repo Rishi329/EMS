@@ -46,7 +46,7 @@
 #include <esp_task_wdt.h>
 
 // ============ VERSION ============
-#define FIRMWARE_VERSION "3.1.0"
+#define FIRMWARE_VERSION "3.2.0"
 
 // ============ DEBUG ============
 #define MODBUS_DEBUG true  // Set false after confirming meters work
@@ -94,17 +94,20 @@ const int MODBUS_BAUD = 9600;
 const int MODBUS_RX = 18;
 const int MODBUS_TX = 17;
 
+// If true, convert 4X addresses (e.g. 40001) to zero-based index for ModbusMaster library.
+// ModbusMaster uses zero-based addressing: 40001 -> 0, 40003 -> 2, etc.
+#define MODBUS_ZERO_BASE true
+
 // --- Meter Configuration ---
 enum MeterType { METER_SCHNEIDER_EM6436,
-                 METER_ELITE_100 };
+                 METER_ELITE_100,
+                 METER_RISHABH_LM1360 };
 
-const uint8_t METER_IDS[] = { 7, 10, 47, 3, 4 };
+const uint8_t METER_IDS[] = { 7, 10, 11 };
 const MeterType METER_TYPES[] = {
-  METER_SCHNEIDER_EM6436,  // Meter 7  = Schneider EM6436
-  METER_SCHNEIDER_EM6436,  // Meter 10 = Schneider EM6436
-  METER_ELITE_100,         // Meter 47 = Elite 100
-  METER_ELITE_100,         // Meter 3  = Elite 100
-  METER_ELITE_100          // Meter 4  = Elite 100
+  METER_RISHABH_LM1360,  // Meter 7  = Rishabh RISH LM 1360
+  METER_RISHABH_LM1360,  // Meter 10 = Rishabh RISH LM 1360
+  METER_RISHABH_LM1360   // Meter 11 = Rishabh RISH LM 1360
 };
 const uint8_t NUM_METERS = sizeof(METER_IDS) / sizeof(METER_IDS[0]);
 
@@ -220,19 +223,19 @@ void setup() {
   printResetReason();
 
   // Step 1: Initialize Flash Storage
-  Serial.println("[1/5] Initializing flash storage...");
+  Serial.println("[1/7] Initializing flash storage...");
   initStorage();
 
   // Step 2: Initialize Modbus
-  Serial.println("[2/5] Initializing Modbus...");
+  Serial.println("[2/7] Initializing Modbus...");
   initModbus();
 
   // Step 3: Initialize WiFi (must be before initDeviceId on ESP32-S3)
-  Serial.println("[3/5] Connecting to WiFi...");
+  Serial.println("[3/7] Connecting to WiFi...");
   initWiFi();
 
   // Step 4: Get Device Identity (after WiFi init so MAC is available)
-  Serial.println("[4/5] Getting device identity...");
+  Serial.println("[4/7] Getting device identity...");
   initDeviceId();
 
   // Step 5: Initialize MQTT
@@ -256,7 +259,7 @@ void setup() {
 void printBanner() {
   Serial.println("\n");
   Serial.println("╔═══════════════════════════════════════════╗");
-  Serial.println("║   ESP32 Energy Monitor - Production v3.0  ║");
+  Serial.println("║   ESP32 Energy Monitor - Production v3.2  ║");
   Serial.println("║   Zero Data Loss + Dual WiFi Failover     ║");
   Serial.println("╚═══════════════════════════════════════════╝");
   Serial.println();
@@ -449,6 +452,9 @@ void testModbusCommunication() {
     if (METER_TYPES[i] == METER_SCHNEIDER_EM6436) {
       testReg = 3914;  // Frequency register on Schneider
       meterTypeName = "Schneider";
+    } else if (METER_TYPES[i] == METER_RISHABH_LM1360) {
+      testReg = MODBUS_ZERO_BASE ? (40071 - 40001) : 40071;  // Frequency register on RISH LM1360
+      meterTypeName = "RISH_LM1360";
     } else {
       testReg = 171;  // Frequency register on Elite 100
       meterTypeName = "Elite100";
@@ -457,7 +463,7 @@ void testModbusCommunication() {
     uint8_t result = meters[i].readHoldingRegisters(testReg, 2);
 
     if (result == meters[i].ku8MBSuccess) {
-      uint32_t raw = (meters[i].getResponseBuffer(0) << 16) | meters[i].getResponseBuffer(1);
+      uint32_t raw = ((uint32_t)meters[i].getResponseBuffer(0) << 16) | meters[i].getResponseBuffer(1);
       float freq;
       memcpy(&freq, &raw, 4);
       Serial.printf("  Meter %d (%s): OK  freq=%.2f Hz\n", METER_IDS[i], meterTypeName, freq);
@@ -824,6 +830,119 @@ MeterReading readElite100(ModbusMaster& node, uint8_t id) {
   return r;
 }
 
+// ============ RISHABH RISH LM 1360 SUPPORT ============
+
+// Helper: read a 32-bit IEEE-754 float from Rishabh holding registers (4X addresses)
+float readRishabhHoldingFloat(ModbusMaster& node, uint16_t reg4x) {
+  uint16_t addr;
+  if (MODBUS_ZERO_BASE) {
+    addr = (uint16_t)(reg4x - 40001);  // 40001 -> 0, 40003 -> 2, etc.
+  } else {
+    addr = reg4x;
+  }
+
+  uint8_t result = node.readHoldingRegisters(addr, 2);
+  if (result == node.ku8MBSuccess) {
+    uint32_t raw = ((uint32_t)node.getResponseBuffer(0) << 16) | node.getResponseBuffer(1);
+    float value;
+    memcpy(&value, &raw, 4);
+    return value;
+  }
+
+  if (MODBUS_DEBUG) {
+    Serial.printf("      [RISH] Reg %u (addr %u) err: 0x%02X\n", reg4x, addr, result);
+  }
+  return 0.0;
+}
+
+// Rishabh RISH LM 1360 (LM13xx series) - FC03 Holding Registers, IEEE 754 float
+MeterReading readRishabhLM1360(ModbusMaster& node, uint8_t id) {
+  MeterReading r;
+  memset(&r, 0, sizeof(r));
+  r.meterId = id;
+  r.valid = true;
+
+  // --- Phase Voltages L-N ---
+  r.vL1 = readRishabhHoldingFloat(node, 40001);  // V1N
+  r.vL2 = readRishabhHoldingFloat(node, 40003);  // V2N
+  r.vL3 = readRishabhHoldingFloat(node, 40005);  // V3N
+  mqtt.loop(); yield();
+
+  // --- Phase Currents ---
+  r.iL1 = readRishabhHoldingFloat(node, 40007);  // I1
+  r.iL2 = readRishabhHoldingFloat(node, 40009);  // I2
+  r.iL3 = readRishabhHoldingFloat(node, 40011);  // I3
+  mqtt.loop(); yield();
+
+  // --- Active Power per phase ---
+  r.pL1 = readRishabhHoldingFloat(node, 40013);  // W1
+  r.pL2 = readRishabhHoldingFloat(node, 40015);  // W2
+  r.pL3 = readRishabhHoldingFloat(node, 40017);  // W3
+  mqtt.loop(); yield();
+
+  // --- Apparent Power per phase ---
+  r.sL1 = readRishabhHoldingFloat(node, 40019);  // VA1
+  r.sL2 = readRishabhHoldingFloat(node, 40021);  // VA2
+  r.sL3 = readRishabhHoldingFloat(node, 40023);  // VA3
+  mqtt.loop(); yield();
+
+  // --- Reactive Power per phase ---
+  r.qL1 = readRishabhHoldingFloat(node, 40025);  // VAr1
+  r.qL2 = readRishabhHoldingFloat(node, 40027);  // VAr2
+  r.qL3 = readRishabhHoldingFloat(node, 40029);  // VAr3
+  mqtt.loop(); yield();
+
+  // --- Power Factor per phase ---
+  r.pfL1 = readRishabhHoldingFloat(node, 40031);  // PF1
+  r.pfL2 = readRishabhHoldingFloat(node, 40033);  // PF2
+  r.pfL3 = readRishabhHoldingFloat(node, 40035);  // PF3
+  mqtt.loop(); yield();
+
+  // --- Phase Angle per phase ---
+  r.paL1 = readRishabhHoldingFloat(node, 40037);  // PA1
+  r.paL2 = readRishabhHoldingFloat(node, 40039);  // PA2
+  r.paL3 = readRishabhHoldingFloat(node, 40041);  // PA3
+  mqtt.loop(); yield();
+
+  // --- Averages and Totals ---
+  r.vAvg = readRishabhHoldingFloat(node, 40043);    // Volts Average
+  r.iAvg = readRishabhHoldingFloat(node, 40047);    // Current Average
+  r.pTotal = readRishabhHoldingFloat(node, 40053);   // Watts Sum
+  r.sTotal = readRishabhHoldingFloat(node, 40057);   // VA Sum
+  r.qTotal = readRishabhHoldingFloat(node, 40061);   // VAr Sum
+  r.pfTotal = readRishabhHoldingFloat(node, 40063);  // PF Average
+  r.frequency = readRishabhHoldingFloat(node, 40071); // Frequency
+  mqtt.loop(); yield();
+
+  // --- Line-to-Line Voltages ---
+  r.vL1L2 = readRishabhHoldingFloat(node, 40101);  // VL1-L2
+  r.vL2L3 = readRishabhHoldingFloat(node, 40103);  // VL2-L3
+  r.vL3L1 = readRishabhHoldingFloat(node, 40105);  // VL3-L1
+  mqtt.loop(); yield();
+
+  // --- Energy Registers ---
+  r.eImport = readRishabhHoldingFloat(node, 40111);   // Wh Import
+  r.eExport = readRishabhHoldingFloat(node, 40115);   // Wh Export
+  r.erImport = readRishabhHoldingFloat(node, 40119);  // VArh Capacitive
+  r.erExport = readRishabhHoldingFloat(node, 40123);  // VArh Inductive
+  r.esTotal = readRishabhHoldingFloat(node, 40127);   // VAh Total
+  mqtt.loop(); yield();
+
+  // --- Neutral Current ---
+  r.iNeutral = readRishabhHoldingFloat(node, 40113);  // I Neutral
+  mqtt.loop(); yield();
+
+  // Calculated fields
+  r.iTotal = r.iL1 + r.iL2 + r.iL3;
+
+  // Validate - at least one phase voltage should read valid
+  if (r.vL1 < 1.0f && r.vL2 < 1.0f && r.vL3 < 1.0f) {
+    r.valid = false;
+  }
+
+  return r;
+}
+
 // Dispatch to correct meter-type reader
 MeterReading readSingleMeter(ModbusMaster& node, uint8_t id, MeterType type) {
   switch (type) {
@@ -831,6 +950,8 @@ MeterReading readSingleMeter(ModbusMaster& node, uint8_t id, MeterType type) {
       return readSchneiderEM6436(node, id);
     case METER_ELITE_100:
       return readElite100(node, id);
+    case METER_RISHABH_LM1360:
+      return readRishabhLM1360(node, id);
     default:
       {
         MeterReading r;
@@ -846,7 +967,7 @@ float readRegister(ModbusMaster& node, uint16_t addr) {
   uint8_t result = node.readHoldingRegisters(addr, 2);
 
   if (result == node.ku8MBSuccess) {
-    uint32_t raw = (node.getResponseBuffer(0) << 16) | node.getResponseBuffer(1);
+    uint32_t raw = ((uint32_t)node.getResponseBuffer(0) << 16) | node.getResponseBuffer(1);
     float value;
     memcpy(&value, &raw, 4);
     return value;

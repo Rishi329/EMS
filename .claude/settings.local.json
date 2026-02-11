@@ -17,7 +17,22 @@
       "WebFetch(domain:groups.google.com)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:www.se.com)",
-      "WebFetch(domain:www.scribd.com)"
+      "WebFetch(domain:www.scribd.com)",
+      "WebFetch(domain:cdn.tecotecshop.com)",
+      "WebFetch(domain:www.promelsa.com.pe)",
+      "Bash(where:*)",
+      "Bash(powershell -Command:*)",
+      "Bash(Select-String \"COM\")",
+      "Bash(powershell.exe -Command:*)",
+      "Bash(winget install:*)",
+      "Bash(C:\\\\Users\\\\IT106\\\\bin\\\\arduino-cli.exe version:*)",
+      "Bash(\"C:/Users/IT106/bin/arduino-cli.exe\" version:*)",
+      "Bash(\"C:/Users/IT106/bin/arduino-cli.exe\" config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json)",
+      "Bash(\"C:/Users/IT106/bin/arduino-cli.exe\" core install esp32:esp32@3.3.6)",
+      "Bash(\"C:/Users/IT106/bin/arduino-cli.exe\" core list)",
+      "Bash(\"C:/Users/IT106/bin/arduino-cli.exe\" compile --fqbn esp32:esp32:esp32s3:CDCOnBoot=cdc,PartitionScheme=min_spiffs,FlashSize=16M,PSRAM=disabled,USBMode=hwcdc \"d:/Rishikesh/EMS/Firmware/EnergyMeter_Production/EnergyMeter_Production.ino\")",
+      "Bash(git rm:*)",
+      "Bash(python -c \"import os; os.remove\\(r''d:\\\\Rishikesh\\\\EMS\\\\nul''\\)\")"
     ]
   }
 }
